@@ -83,7 +83,9 @@ public class SchedulerUDP {
         int x = Integer.parseInt(p[5]);
         int y = Integer.parseInt(p[6]);
 
-        FireEvent event = new FireEvent(time, zoneId, type, severity, x, y);
+        FaultType faultType = (p.length >= 8) ? FaultType.fromString(p[7]) : FaultType.NONE; // Parse the fault type from the message
+
+        FireEvent event = new FireEvent(time, zoneId, type, severity, x, y, faultType);
         pendingEvents.add(event);
 
         gui.setZoneOnFire(zoneId, true, severity);
@@ -121,7 +123,7 @@ public class SchedulerUDP {
             return;
         }
 
-        send("ASSIGN," + event.time + "," + event.zoneId + "," + event.type + "," + event.severity + "," + event.centerX + "," + event.centerY, sender, port);
+        send("ASSIGN," + event.time + "," + event.zoneId + "," + event.type + "," + event.severity + "," + event.centerX + "," + event.centerY + "," + event.faultType.name(), sender, port);
 
         drone.state = "ASSIGNED";
         gui.updateZone(droneId, event.zoneId);
