@@ -32,7 +32,7 @@ Each drone runs as its own process with a unique ID. Drones:
 
 Reads two CSV files and sends their contents to the scheduler:
 - Zone file: Defines rectangular zones with coordinates
-- Event file: Contains timed fire events with severity levels (Low=10L, Moderate=20L, High=30L)
+- Event file: Contains timed fire events with severity levels (Low=10L, Moderate=20L, High=30L), as well as fault events now
 Events are sent in real-time respecting time intervals from the file.
 
 ### 4. FireGUI
@@ -75,17 +75,24 @@ FireIncident to Scheduler:
 
 The drone subsystem implements a state machine using the State pattern. Each state represents a distinct operational mode with specific behaviors and valid transitions.
 
-States: 
+States: <br>
 IDLE → TAKEOFF → EN_ROUTE → EXTINGUISHING → RETURNING → REFILLING → IDLE
 
 Events:
+<br>
 
 ASSIGNMENT_RECEIVED: New mission assigned by scheduler
+<br>
 TAKEOFF_DONE: Takeoff sequence complete
+<br>
 ARRIVED_AT_ZONE: Drone has reached the fire zone
+<br>
 AGENT_EMPTY: Firefighting agent depleted
+<br>
 FIRE_DONE: Fire has been extinguished
+<br>
 RETURNED_TO_BASE: Drone has landed at base
+<br>
 REFILL_DONE: Refill process complete
 
 All other event/state combinations are ignored with appropriate logging (private ignore method).
@@ -93,29 +100,38 @@ All other event/state combinations are ignored with appropriate logging (private
 ## Team Responsibilities
 
 ### Iteration 4:
-- Kalid -
-- Halden -
-- Jesse - Fault Injection, UML Class Diagram, GUI fixes from iteration 3
-- Chukwuemeka -
-- Sarvesh -
+Kalid -
+<br>
+Halden -
+<br>
+Jesse - Fault Injection, UML Class Diagram, GUI fixes from iteration 3
+<br>
+Sarvesh -
+<br>
+Chukwuemeka -
 
 ### Iteration 3:
-- Kalid - UDP implementation and message parsing/handling
-- Halden - UML Class Diagram and README.txt
-- Jesse - Implemented DroneStateMachine with State pattern
-- Emeka - FireGUI updates: real-time position updates, zone status display, multiple drone tracking
-- Fifth Member - Updated FireIncidentSubsystem to send events over UDP + event timing with TIME_FACTOR
+Kalid - Updated FireIncidentSubsystem to send events over UDP + event timing with TIME_FACTOR, FireGUI updates: real-time position updates, zone status display, multiple drone tracking
+<br>
+Halden - UML Class Diagram and README.txt
+<br>
+Jesse - Implemented DroneStateMachine with State pattern, UDP implementation and message parsing/handling
 
 ### Iteration 2:
-- Kalid - GUI implementation
-- Halden - functionality and scheduling
-- Jesse - Diagrams and state machine
+Kalid - GUI implementation
+<br>
+Halden - functionality and scheduling
+<br>
+Jesse - Diagrams and state machine
 
 ### Iteration 1:
-- Kalid - Scheduler and Drone System
-- Halden - FireZones and FireEvents
-- Jesse - FireSubsystem and diagrams
-- Mohamed - GUI and Unit Testing
+Kalid - Scheduler and Drone System
+<br>
+Halden - FireZones and FireEvents
+<br>
+Jesse - FireSubsystem and diagrams
+<br>
+Mohamed - GUI and Unit Testing
 
 ## Setup Instructions
 
