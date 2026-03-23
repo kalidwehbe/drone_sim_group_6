@@ -49,19 +49,19 @@ Provides a visual interface showing:
 All communication uses UDP with string-based messages:
 
 Drone to Scheduler:
-- READY,<id>,<x>,<y>,<agent>
-- DRONE_STATUS,<id>,<state>,<agent>
-- DRONE_POS,<id>,<x>,<y>
-- DRONE_ARRIVED,<id>,<zoneId>
-- DRONE_COMPLETE,<id>,<zoneId>
+- READY,\<id\>,\<x\>,\<y\>,\<agent\>
+- DRONE_STATUS,\<id\>,\<state\>,\<agent\>
+- DRONE_POS,\<id\>,\<x\>,\<y\>
+- DRONE_ARRIVED,\<id\>,\<zoneId\>
+- DRONE_COMPLETE,\<id\>,\<zoneId\>
 
 Scheduler to Drone:
-- ASSIGN,<time>,<zoneId>,<type>,<severity>,<x>,<y>
+- ASSIGN,\<time\>,\<zoneId\>,\<type\>,\<severity\>,\<x\>,\<y\>
 - NO_TASK
 
 FireIncident to Scheduler:
-- ZONE,<id>,<x1>,<y1>,<x2>,<y2>
-- EVENT,<time>,<zoneId>,<type>,<severity>,<x>,<y>
+- ZONE,\<id\>,\<x1\>,\<y1\>,\<x2\>,\<y2\>
+- EVENT,\<time\>,\<zoneId\>,\<type\>,\<severity\>,\<x\>,\<y\>
 
 ## Multi-Drone Coordination
 
