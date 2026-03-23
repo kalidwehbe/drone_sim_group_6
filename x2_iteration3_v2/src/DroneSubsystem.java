@@ -156,7 +156,7 @@ public class DroneSubsystem {
 
             agent = 14;
             sendStatus(DroneStatus.REFILLED);
-            sendStatus(DroneStatus.REFILLED);
+            //sendStatus(DroneStatus.REFILLED);
             EventLogger.log("DRONE", "REFILL_COMPLETE",
                     "drone=" + id + " agent=" + agent);
             fsm.handleEvent(DroneEvent.REFILL_DONE);
