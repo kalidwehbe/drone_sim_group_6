@@ -72,7 +72,9 @@ public class DroneSubsystem {
         int x = Integer.parseInt(p[5]);
         int y = Integer.parseInt(p[6]);
 
-        return new FireEvent(time, zoneId, type, severity, x, y);
+        FaultType faultType = (p.length >= 8) ? FaultType.fromString(p[7]) : FaultType.NONE; //Parse the fault type from the message
+
+        return new FireEvent(time, zoneId, type, severity, x, y, faultType);
     }
 
     private void performMission(FireEvent event) throws Exception {
@@ -84,12 +86,28 @@ public class DroneSubsystem {
             fsm.handleEvent(DroneEvent.TAKEOFF_DONE);
 
             sendStatus(DroneStatus.EN_ROUTE);
-            moveTo(event.centerX, event.centerY);
-            sendArrival(event.zoneId);
-            fsm.handleEvent(DroneEvent.ARRIVED_AT_ZONE);
 
+            //STUCK_IN_FLIGHT fault injection
+            if (event.faultType == FaultType.STUCK_IN_FLIGHT) { // If it has a stuck in flight fault, send a message to the scheduler and return
+                send("DRONE_FAULT," + id + ",STUCK_IN_FLIGHT," + event.zoneId);
+                return;
+            }
+            else moveTo(event.centerX, event.centerY); //If no stuck in flight fault continue as normal (move drone)
+
+            //CORRUPTED_MESSAGE fault injection
+            if (event.faultType == FaultType.CORRUPTED_MESSAGE) {
+                send("#########"); // If event is corrupted, send a corrupted message and return
+                return;
+            }
+            sendArrival(event.zoneId); //If message not corrupted continue as normal
+            fsm.handleEvent(DroneEvent.ARRIVED_AT_ZONE);
             sendStatus(DroneStatus.EXTINGUISHING);
 
+            //NOZZLE_FAULT fault injection
+            if (event.faultType == FaultType.NOZZLE_FAULT) { // if it has a nozzle fault, send a message to scheduler and return
+                send("DRONE_FAULT," + id + ",NOZZLE_FAULT," + event.zoneId);
+                return;
+            }
             while (requiredAgent > 0 && agent > 0) {
                 agent--;
                 requiredAgent--;
