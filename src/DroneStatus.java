@@ -4,7 +4,5 @@ public enum DroneStatus {
     EN_ROUTE,
     EXTINGUISHING,
     RETURNING,
-    REFILLED,
-    // fault handling
-    FAULTED
+    REFILLED
 }

@@ -14,8 +14,6 @@ public class DroneSubsystem {
     private int droneX = 0;
     private int droneY = 0;
     private int agent = 14;
-    // fault handling
-    private volatile boolean hardFaulted = false;
 
 
     public DroneSubsystem(int id, String host, int port) throws Exception {
@@ -33,13 +31,6 @@ public class DroneSubsystem {
                     "drone=" + id + " localPort=" + socket.getLocalPort());
 
             while (true) {
-                if (hardFaulted) {
-                    sendStatus(DroneStatus.FAULTED);
-                    EventLogger.log("DRONE", "HARD_FAULT_SHUTDOWN",
-                            "drone=" + id + " reason=nozzle_or_door_fault");
-                    break;
-                }
-
                 if (fsm.getState() == DroneStatus.IDLE) {
                     sendReady();
                     FireEvent event = waitForAssignment();
@@ -113,11 +104,6 @@ public class DroneSubsystem {
                         " requiredAgent=" + requiredAgent);
 
         while (requiredAgent > 0) {
-            // fault handling
-            if (event.faultType == FaultType.CORRUPTED_MESSAGE) {
-                sendCorruptedMessage(event.zoneId);
-            }
-
             sendStatus(DroneStatus.TAKEOFF);
             EventLogger.log("DRONE", "TAKEOFF_STARTED",
                     "drone=" + id + " zone=" + event.zoneId);
@@ -128,10 +114,6 @@ public class DroneSubsystem {
             EventLogger.log("DRONE", "EN_ROUTE_STARTED",
                     "drone=" + id + " zone=" + event.zoneId +
                             " targetX=" + event.centerX + " targetY=" + event.centerY);
-            if (event.faultType == FaultType.STUCK_IN_FLIGHT) {
-                simulateStuckInFlight(event.zoneId);
-                return;
-            }
             moveTo(event.centerX, event.centerY);
             sendArrival(event.zoneId);
             fsm.handleEvent(DroneEvent.ARRIVED_AT_ZONE);
@@ -141,11 +123,6 @@ public class DroneSubsystem {
                     "drone=" + id + " zone=" + event.zoneId +
                             " remainingRequired=" + requiredAgent +
                             " onboardAgent=" + agent);
-
-            if (event.faultType == FaultType.NOZZLE_FAULT) {
-                handleNozzleFault(event.zoneId);
-                return;
-            }
 
             while (requiredAgent > 0 && agent > 0) {
                 agent--;
@@ -215,27 +192,6 @@ public class DroneSubsystem {
         }
         EventLogger.log("DRONE", "MOVE_COMPLETED",
                 "drone=" + id + " x=" + droneX + " y=" + droneY);
-    }
-
-    private void simulateStuckInFlight(int zoneId) throws Exception {
-        // fault handling
-        EventLogger.log("DRONE", "FAULT_INJECTED_STUCK_IN_FLIGHT",
-                "drone=" + id + " zone=" + zoneId + " x=" + droneX + " y=" + droneY);
-        // Intentionally do not send DRONE_ARRIVED; scheduler timeout detects this.
-        Thread.sleep(2500);
-    }
-
-    private void handleNozzleFault(int zoneId) throws Exception {
-        EventLogger.log("DRONE", "FAULT_INJECTED_NOZZLE_FAULT",
-                "drone=" + id + " zone=" + zoneId);
-        hardFaulted = true;
-        sendStatus(DroneStatus.FAULTED);
-    }
-
-    private void sendCorruptedMessage(int zoneId) throws Exception {
-        send("DRONE_STATUS_CORRUPTED," + id + ",BROKEN_PAYLOAD," + zoneId);
-        EventLogger.log("DRONE", "FAULT_INJECTED_CORRUPTED_MESSAGE",
-                "drone=" + id + " zone=" + zoneId);
     }
 
     private void sendReady() throws Exception {
