@@ -6,6 +6,10 @@ import java.util.*;
 
 public class SchedulerUDP {
 
+    // fault handling: configuration
+    private static final long EN_ROUTE_TIMEOUT_MS = 2500;
+    private static final long EXTINGUISH_PROGRESS_TIMEOUT_MS = 2200;
+
     private final DatagramSocket socket;
     final Map<Integer, DroneInfo> drones = new HashMap<>();
     private final Map<Integer, FireZone> zones = new HashMap<>();
@@ -33,7 +37,15 @@ public class SchedulerUDP {
             EventLogger.log("SCHEDULER", "MESSAGE_RECEIVED",
                     "from=" + packet.getAddress() + ":" + packet.getPort() +
                             " msg=" + msg);
-            handleMessage(msg, packet.getAddress(), packet.getPort());
+            try {
+                // fault handling: invalid/corrupted message isolation
+                handleMessage(msg, packet.getAddress(), packet.getPort());
+                // fault handling: timer-driven detection pass
+                detectTimeoutFaults();
+            } catch (Exception e) {
+                EventLogger.log("SCHEDULER", "CORRUPTED_OR_INVALID_MESSAGE",
+                        "msg=" + msg + " error=" + e.getMessage());
+            }
         }
     }
 
@@ -128,11 +140,19 @@ public class SchedulerUDP {
                     "drone=" + droneId);
         }
 
+        // fault handling: ignore drones already faulted/offline
+        if (drone.offline) {
+            EventLogger.log("SCHEDULER", "READY_IGNORED_DRONE_OFFLINE",
+                    "drone=" + droneId);
+            return;
+        }
+
         drone.address = sender;
         drone.port = port;
         drone.position = new Point(x, y);
         drone.agent = agent;
         drone.state = "IDLE";
+        drone.lastStatusAtMs = System.currentTimeMillis();
 
         gui.updateDroneStatus(droneId, "IDLE");
         gui.updateAgent(droneId, agent);
@@ -154,6 +174,11 @@ public class SchedulerUDP {
         send("ASSIGN," + event.time + "," + event.zoneId + "," + event.type + "," + event.severity + "," + event.centerX + "," + event.centerY + "," + event.faultType.name(), sender, port);
 
         drone.state = "ASSIGNED";
+        // fault handling: assignment baseline for timeout/progress tracking
+        drone.assignedEvent = event;
+        drone.assignedAtMs = System.currentTimeMillis();
+        drone.lastExtinguishAgent = agent;
+        drone.lastExtinguishProgressAtMs = drone.assignedAtMs;
         gui.updateZone(droneId, event.zoneId);
 
         pendingEvents.remove(event);
@@ -190,10 +215,10 @@ public class SchedulerUDP {
                             " distance=" + bestDistance +
                             " workload=" + drone.workload);
             /**
-            System.out.println("[Scheduler] Drone " + drone.id +
-                    " selected for zone " + best.zoneId +
-                    " (distance=" + bestDistance +
-                    ", workload=" + drone.workload + ")");
+             System.out.println("[Scheduler] Drone " + drone.id +
+             " selected for zone " + best.zoneId +
+             " (distance=" + bestDistance +
+             ", workload=" + drone.workload + ")");
              */
         }
 
@@ -202,6 +227,10 @@ public class SchedulerUDP {
 
     public void handleDroneStatus(String msg) {
         String[] p = msg.split(",");
+        // fault handling: malformed packet detection
+        if (p.length < 4) {
+            throw new IllegalArgumentException("DRONE_STATUS malformed: " + msg);
+        }
         int droneId = Integer.parseInt(p[1]);
         String state = p[2];
         int agent = Integer.parseInt(p[3]);
@@ -218,9 +247,24 @@ public class SchedulerUDP {
 
         drone.state = state;
         drone.agent = agent;
+        drone.lastStatusAtMs = System.currentTimeMillis();
 
         gui.updateDroneStatus(droneId, state);
         gui.updateAgent(droneId, agent);
+
+        // fault handling: state-progress tracking and hard-fault reaction
+        if ("EN_ROUTE".equalsIgnoreCase(state)) {
+            if (drone.assignedAtMs == 0) {
+                drone.assignedAtMs = System.currentTimeMillis();
+            }
+        } else if ("EXTINGUISHING".equalsIgnoreCase(state)) {
+            if (agent < drone.lastExtinguishAgent) {
+                drone.lastExtinguishProgressAtMs = System.currentTimeMillis();
+                drone.lastExtinguishAgent = agent;
+            }
+        } else if ("FAULTED".equalsIgnoreCase(state)) {
+            markDroneFaultAndRequeue(drone, "NOZZLE_FAULT_HARD");
+        }
 
         EventLogger.log("SCHEDULER", "DRONE_STATUS_RECEIVED",
                 "drone=" + droneId + " state=" + state + " agent=" + agent);
@@ -228,6 +272,10 @@ public class SchedulerUDP {
 
     public void handleDronePos(String msg) {
         String[] p = msg.split(",");
+        // fault handling: malformed packet detection
+        if (p.length < 4) {
+            throw new IllegalArgumentException("DRONE_POS malformed: " + msg);
+        }
         int droneId = Integer.parseInt(p[1]);
         int x = Integer.parseInt(p[2]);
         int y = Integer.parseInt(p[3]);
@@ -243,6 +291,7 @@ public class SchedulerUDP {
         }
 
         drone.position = new Point(x, y);
+        drone.lastPositionAtMs = System.currentTimeMillis();
         gui.updateDronePosition(droneId, x, y);
 
         //System.out.println("[Scheduler] Drone " + droneId +" is at position "+ x+ " x " + y +" y");
@@ -253,8 +302,17 @@ public class SchedulerUDP {
 
     private void handleDroneArrived(String msg) {
         String[] p = msg.split(",");
+        // fault handling: malformed packet detection
+        if (p.length < 3) {
+            throw new IllegalArgumentException("DRONE_ARRIVED malformed: " + msg);
+        }
         int droneId = Integer.parseInt(p[1]);
         int zoneId = Integer.parseInt(p[2]);
+
+        DroneInfo drone = drones.get(droneId);
+        if (drone != null) {
+            drone.lastArrivedAtMs = System.currentTimeMillis();
+        }
 
         //System.out.println("[Scheduler] Drone " + droneId + " arrived at zone " + zoneId);
         EventLogger.log("SCHEDULER", "DRONE_ARRIVED_RECEIVED",
@@ -263,6 +321,10 @@ public class SchedulerUDP {
 
     void handleDroneComplete(String msg) {
         String[] p = msg.split(",");
+        // fault handling: malformed packet detection
+        if (p.length < 3) {
+            throw new IllegalArgumentException("DRONE_COMPLETE malformed: " + msg);
+        }
         int droneId = Integer.parseInt(p[1]);
         int zoneId = Integer.parseInt(p[2]);
 
@@ -270,6 +332,10 @@ public class SchedulerUDP {
         if (drone != null) {
             drone.workload++;
             drone.state = "IDLE";
+            drone.assignedEvent = null;
+            drone.assignedAtMs = 0;
+            drone.lastExtinguishAgent = drone.agent;
+            drone.lastExtinguishProgressAtMs = System.currentTimeMillis();
         }
 
         gui.setZoneOnFire(zoneId, false, null);
@@ -289,6 +355,49 @@ public class SchedulerUDP {
                 "to=" + addr + ":" + port + " msg=" + msg);
     }
 
+    private void detectTimeoutFaults() {
+        // fault handling: timeout-based stuck-flight and no-progress detection
+        long now = System.currentTimeMillis();
+        for (DroneInfo drone : drones.values()) {
+            if (drone.offline || drone.assignedEvent == null) {
+                continue;
+            }
+
+            if ("EN_ROUTE".equalsIgnoreCase(drone.state) || "ASSIGNED".equalsIgnoreCase(drone.state)) {
+                long start = drone.assignedAtMs > 0 ? drone.assignedAtMs : now;
+                if (now - start > EN_ROUTE_TIMEOUT_MS && drone.lastArrivedAtMs < start) {
+                    markDroneFaultAndRequeue(drone, "STUCK_IN_FLIGHT_TIMEOUT");
+                }
+            }
+
+            if ("EXTINGUISHING".equalsIgnoreCase(drone.state)) {
+                if (now - drone.lastExtinguishProgressAtMs > EXTINGUISH_PROGRESS_TIMEOUT_MS) {
+                    markDroneFaultAndRequeue(drone, "NOZZLE_OR_BAY_DOOR_STUCK");
+                }
+            }
+        }
+    }
+
+    private void markDroneFaultAndRequeue(DroneInfo drone, String reason) {
+        // fault handling: mark offline and requeue mission
+        if (drone.offline) {
+            return;
+        }
+        drone.offline = true;
+        drone.state = "FAULTED";
+        gui.updateDroneStatus(drone.id, "FAULTED:" + reason);
+        EventLogger.log("SCHEDULER", "DRONE_FAULT_DETECTED",
+                "drone=" + drone.id + " reason=" + reason);
+
+        if (drone.assignedEvent != null) {
+            pendingEvents.add(drone.assignedEvent);
+            gui.setZoneOnFire(drone.assignedEvent.zoneId, true, drone.assignedEvent.severity);
+            EventLogger.log("SCHEDULER", "EVENT_REQUEUED_AFTER_FAULT",
+                    "drone=" + drone.id + " zone=" + drone.assignedEvent.zoneId);
+            drone.assignedEvent = null;
+        }
+    }
+
     public static class DroneInfo {
         final int id;
         InetAddress address;
@@ -297,6 +406,15 @@ public class SchedulerUDP {
         Point position = new Point(0, 0);
         int agent = 14;
         int workload = 0;
+        // fault handling: runtime tracking fields
+        boolean offline = false;
+        FireEvent assignedEvent;
+        long assignedAtMs = 0;
+        long lastStatusAtMs = 0;
+        long lastPositionAtMs = 0;
+        long lastArrivedAtMs = 0;
+        int lastExtinguishAgent = 14;
+        long lastExtinguishProgressAtMs = 0;
 
         DroneInfo(int id) {
             this.id = id;
