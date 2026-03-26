@@ -1,0 +1,11 @@
+public enum DroneStatus {
+    IDLE,
+    TAKEOFF,
+    EN_ROUTE,
+    EXTINGUISHING,
+    RETURNING,
+    REFILLED,
+    // fault handling
+    FAULTED,
+    SOFT_FAULTED
+}
