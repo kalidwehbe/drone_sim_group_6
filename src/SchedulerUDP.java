@@ -129,6 +129,7 @@ public class SchedulerUDP {
                 "time=" + time + " zone=" + zoneId +
                         " type=" + type + " severity=" + severity +
                         " x=" + x + " y=" + y +
+                        " faultType=" + faultType +
                         " pendingCount=" + pendingEvents.size());
 
     }
@@ -145,9 +146,19 @@ public class SchedulerUDP {
             drone = new DroneInfo(droneId);
             drones.put(droneId, drone);
             gui.registerDrone(droneId);
+            EventLogger.log("SCHEDULER", "DRONE_REGISTERED",
+                    "drone=" + droneId);
         }
 
-        if (drone.offline) return;
+        EventLogger.log("SCHEDULER", "DRONE_READY_RECEIVED",
+                "drone=" + droneId + " x=" + x + " y=" + y +
+                        " agent=" + agent + " offline=" + drone.offline);
+
+        if (drone.offline) {
+            EventLogger.log("SCHEDULER", "READY_IGNORED_OFFLINE_DRONE",
+                    "drone=" + droneId);
+            return;
+        }
 
         drone.address = sender;
         drone.port = port;
@@ -167,6 +178,8 @@ public class SchedulerUDP {
         }
 
         if (event == null) {
+            EventLogger.log("SCHEDULER", "NO_TASK_SENT",
+                    "drone=" + droneId);
             send("NO_TASK", sender, port);
             return;
         }
@@ -175,6 +188,13 @@ public class SchedulerUDP {
                 event.type + "," + event.severity + "," +
                 event.centerX + "," + event.centerY + "," +
                 event.faultType.name(), sender, port);
+
+        EventLogger.log("SCHEDULER", "DRONE_ASSIGNED",
+                "drone=" + droneId + " zone=" + event.zoneId +
+                        " severity=" + event.severity +
+                        " faultType=" + event.faultType +
+                        " eventTime=" + event.time +
+                        " targetX=" + event.centerX + " targetY=" + event.centerY);
 
         drone.state = "ASSIGNED";
         drone.assignedEvent = event;
@@ -391,12 +411,19 @@ public class SchedulerUDP {
 
                 // Hard Fault (FAULTED)
                 if (elapsed > EN_ROUTE_TIMEOUT_MS && drone.lastArrivedAtMs < start) {
+                    EventLogger.log("SCHEDULER", "HARD_FAULT_TIMEOUT_DETECTED",
+                            "drone=" + drone.id + " elapsed=" + elapsed +
+                                    "ms assignedZone=" + (drone.assignedEvent != null ? drone.assignedEvent.zoneId : -1));
                     markDroneFaultAndRequeue(drone, "HARD_FAULT:STUCK_IN_FLIGHT_FAULT");
                 }
             }
 
             if ("EXTINGUISHING".equalsIgnoreCase(drone.state)) {
                 if (now - drone.lastExtinguishProgressAtMs > EXTINGUISH_PROGRESS_TIMEOUT_MS) {
+                    EventLogger.log("SCHEDULER", "HARD_FAULT_NO_PROGRESS_DETECTED",
+                            "drone=" + drone.id + " zone=" +
+                                    (drone.assignedEvent != null ? drone.assignedEvent.zoneId : -1) +
+                                    " timeoutMs=" + EXTINGUISH_PROGRESS_TIMEOUT_MS);
                     markDroneFaultAndRequeue(drone, "HARD_FAULT:NOZZLE_OR_BAY_DOOR_STUCK");
                 }
             }
@@ -416,6 +443,11 @@ public class SchedulerUDP {
     }
 
     private void markDroneFaultAndRequeue(DroneInfo drone, String reason) {
+
+        EventLogger.log("SCHEDULER", "FAULT_HANDLING_STARTED",
+                "drone=" + drone.id + " reason=" + reason +
+                        " assignedZone=" + (drone.assignedEvent != null ? drone.assignedEvent.zoneId : -1));
+
         if (drone.offline) return;
 
         // mark the drone as faulted

@@ -117,7 +117,8 @@ public class FireIncidentSubsystem {
                 EventLogger.log("FIRE_INCIDENT", "EVENT_SENT",
                         "time=" + time + " zone=" + zoneId +
                                 " type=" + type + " severity=" + severity +
-                                " centerX=" + centerX + " centerY=" + centerY);
+                                " centerX=" + centerX + " centerY=" + centerY +
+                                " faultType=" + faultType);
             }
         }
         EventLogger.log("FIRE_INCIDENT", "READ_EVENTS_FINISHED",

@@ -55,7 +55,8 @@ public class DroneSubsystem {
                     EventLogger.log("DRONE", "ASSIGNMENT_ACCEPTED",
                             "drone=" + id + " zone=" + event.zoneId +
                                     " severity=" + event.severity +
-                                    " x=" + event.centerX + " y=" + event.centerY);
+                                    " x=" + event.centerX + " y=" + event.centerY +
+                                    " faultType=" + event.faultType);
                     fsm.handleEvent(DroneEvent.ASSIGNMENT_RECEIVED);
                     performMission(event);
                 } else {
@@ -96,12 +97,14 @@ public class DroneSubsystem {
         int x = Integer.parseInt(p[5]);
         int y = Integer.parseInt(p[6]);
 
+        FaultType faultType = (p.length >= 8) ? FaultType.fromString(p[7]) : FaultType.NONE;
+
         EventLogger.log("DRONE", "ASSIGNMENT_RECEIVED",
                 "drone=" + id + " time=" + time + " zone=" + zoneId +
                         " type=" + type + " severity=" + severity +
-                        " x=" + x + " y=" + y);
+                        " x=" + x + " y=" + y +
+                        " faultType=" + faultType);
 
-        FaultType faultType = (p.length >= 8) ? FaultType.fromString(p[7]) : FaultType.NONE; //Parse the fault type from the message
         return new FireEvent(time, zoneId, type, severity, x, y, faultType);
     }
 
@@ -111,11 +114,14 @@ public class DroneSubsystem {
         EventLogger.log("DRONE", "MISSION_STARTED",
                 "drone=" + id + " zone=" + event.zoneId +
                         " severity=" + event.severity +
-                        " requiredAgent=" + requiredAgent);
+                        " requiredAgent=" + requiredAgent +
+                        " faultType=" + event.faultType);
 
         while (requiredAgent > 0) {
             // fault handling
             if (event.faultType == FaultType.CORRUPTED_MESSAGE) {
+                EventLogger.log("DRONE", "FAULT_TRIGGERED_CORRUPTED_MESSAGE",
+                        "drone=" + id + " zone=" + event.zoneId);
                 sendCorruptedMessage(event.zoneId);
                 return;
             }
@@ -143,6 +149,8 @@ public class DroneSubsystem {
                             " onboardAgent=" + agent);
 
             if (event.faultType == FaultType.NOZZLE_FAULT) {
+                EventLogger.log("DRONE", "FAULT_TRIGGERED_NOZZLE_FAULT",
+                        "drone=" + id + " zone=" + event.zoneId);
                 handleNozzleFault(event.zoneId);
                 return;
             }
