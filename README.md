@@ -103,7 +103,7 @@ The drone subsystem implements a state machine using the State pattern. Each sta
 States: <br>
 IDLE → TAKEOFF → EN_ROUTE → EXTINGUISHING → RETURNING → REFILLING → IDLE
 <br>
-all states (except idle) may transition to FAULTED or SOFT_FAULTED in the event of a hard or soft fault, respecitvely.
+all states may transition to FAULTED or SOFT_FAULTED in the event of a hard or soft fault, respectively.
 
 Events:
 <br>
@@ -153,14 +153,14 @@ Expected results:
 
 ### Acceptance Testing
 
-The system demonstrates proper functioning in the presence of faults using `sample_event_file.csv`:
+The system demonstrates proper functioning in the presence of faults using testing files TEST_CASE_EVENT_1-4 and TEST_CASE_ZONE:
 
-| Fault Type | Zone | Expected Behavior | Status |
+Test Case Event x | Fault Type | Zone | Expected Behavior | Status |
 |------------|------|-------------------|--------|
-| NONE | 1 | Drone extinguishes fire normally | Pass |
-| STUCK_IN_FLIGHT | 2 | Soft fault logged, drone recovers, mission completes | Pass |
-| NOZZLE_FAULT | 3 | Hard fault, drone offline, event requeued to another drone | Pass |
-| CORRUPTED_MESSAGE | 7 | Malformed message logged, drone offline, event requeued | Pass |
+TEST_CASE_EVENT_1 | NONE | 1 | Drone extinguishes fire normally | Pass |
+TEST_CASE_EVENT_2 | STUCK_IN_FLIGHT | 2 | Soft fault logged, drone recovers, mission completes | Pass |
+TEST_CASE_EVENT_3 | NOZZLE_FAULT | 3 | Hard fault, drone offline, event requeued to another drone | Pass |
+TEST_CASE_EVENT_4 | CORRUPTED_MESSAGE | 7 | Malformed message logged, drone offline, event requeued | Pass |
 
 Test files used:
 - `sample_zone_file.csv` - Zones' Information
