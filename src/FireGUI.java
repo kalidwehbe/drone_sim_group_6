@@ -3,8 +3,12 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 public class FireGUI extends JFrame {
+
+    private final SchedulerUDP scheduler;
 
     // --- Drone info maps ---
     private Map<Integer, JLabel> droneStatusMap = new ConcurrentHashMap<>();
@@ -17,7 +21,9 @@ public class FireGUI extends JFrame {
     private JTextArea logArea;
     private JPanel legendPanel;
 
-    public FireGUI() {
+
+    public FireGUI(SchedulerUDP scheduler) {
+        this.scheduler = scheduler;
         setTitle("Firefighting Drone System");
         setSize(1000, 600);
         setLayout(new BorderLayout());
@@ -42,6 +48,16 @@ public class FireGUI extends JFrame {
         bottomPanel.add(scrollPane, BorderLayout.CENTER);
         bottomPanel.add(legendPanel, BorderLayout.EAST);
         add(bottomPanel, BorderLayout.SOUTH);
+
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                dispose();
+                scheduler.shutdownFromGui();
+            }
+        });
 
         setVisible(true);
     }

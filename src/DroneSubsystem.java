@@ -18,6 +18,8 @@ public class DroneSubsystem {
     // fault handling
     private volatile boolean hardFaulted = false;
 
+    private volatile boolean shutdownRequested = false;
+    private volatile boolean returnRequested = false;
 
     public DroneSubsystem(int id, String host, int port) throws Exception {
         this.id = id;
@@ -41,9 +43,27 @@ public class DroneSubsystem {
                     break;
                 }
 
+                if (shutdownRequested) {
+                    EventLogger.log("DRONE", "EXITING",
+                            "drone=" + id + " reason=shutdown_requested");
+                    break;
+                }
+
                 if (fsm.getState() == DroneStatus.IDLE) {
                     sendReady();
                     FireEvent event = waitForAssignment();
+
+                    if (shutdownRequested) {
+                        EventLogger.log("DRONE", "EXITING",
+                                "drone=" + id + " reason=shutdown_requested");
+                        break;
+                    }
+
+                    if (returnRequested) {
+                        returnRequested = false;
+                        returnToBaseNow();
+                        continue;
+                    }
 
                     if (event == null) {
                         EventLogger.log("DRONE", "NO_TASK_RECEIVED",
@@ -63,6 +83,10 @@ public class DroneSubsystem {
                     Thread.sleep(100);
                 }
             }
+
+            EventLogger.log("DRONE", "PROCESS_TERMINATED",
+                    "drone=" + id);
+
         } catch (Exception e) {
             EventLogger.log("DRONE", "ERROR",
                     "drone=" + id + " message=" + e.getMessage());
@@ -80,6 +104,20 @@ public class DroneSubsystem {
                 "drone=" + id + " msg=" + msg);
 
         if (msg.equals("NO_TASK")) {
+            return null;
+        }
+
+        if (msg.equals("SHUTDOWN")) {
+            shutdownRequested = true;
+            EventLogger.log("DRONE", "SHUTDOWN_REQUEST_RECEIVED",
+                    "drone=" + id);
+            return null;
+        }
+
+        if (msg.equals("RETURN")) {
+            returnRequested = true;
+            EventLogger.log("DRONE", "RETURN_REQUEST_RECEIVED",
+                    "drone=" + id);
             return null;
         }
 
@@ -190,7 +228,9 @@ public class DroneSubsystem {
             //sendStatus(DroneStatus.REFILLED);
             EventLogger.log("DRONE", "REFILL_COMPLETE",
                     "drone=" + id + " agent=" + agent);
+            fsm.handleEvent(DroneEvent.RETURNED_TO_BASE);
             fsm.handleEvent(DroneEvent.REFILL_DONE);
+            sendStatus(DroneStatus.IDLE);
         }
         EventLogger.log("DRONE", "MISSION_FINISHED",
                 "drone=" + id + " zone=" + event.zoneId);
@@ -304,6 +344,32 @@ public class DroneSubsystem {
         byte[] data = msg.getBytes();
         DatagramPacket packet = new DatagramPacket(data, data.length, schedulerAddress, schedulerPort);
         socket.send(packet);
+    }
+
+    private void returnToBaseNow() throws Exception {
+        if (droneX == 0 && droneY == 0) {
+            sendStatus(DroneStatus.IDLE);
+            EventLogger.log("DRONE", "ALREADY_AT_BASE",
+                    "drone=" + id);
+            return;
+        }
+
+        sendStatus(DroneStatus.RETURNING);
+        EventLogger.log("DRONE", "FORCED_RETURN_TO_BASE",
+                "drone=" + id + " fromX=" + droneX + " fromY=" + droneY);
+
+        FireEvent dummy = new FireEvent("00:00:00", 0, "RETURN", "Low", 0, 0, FaultType.NONE);
+        moveTo(0, 0, dummy);
+
+        agent = 14;
+        sendStatus(DroneStatus.REFILLED);
+        fsm.handleEvent(DroneEvent.RETURNED_TO_BASE);
+        fsm.handleEvent(DroneEvent.REFILL_DONE);
+
+        sendStatus(DroneStatus.IDLE);
+
+        EventLogger.log("DRONE", "RETURN_TO_BASE_COMPLETE",
+                "drone=" + id + " x=" + droneX + " y=" + droneY + " agent=" + agent);
     }
 
     public static void main(String[] args) throws Exception {

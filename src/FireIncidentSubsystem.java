@@ -121,6 +121,11 @@ public class FireIncidentSubsystem {
                                 " faultType=" + faultType);
             }
         }
+
+        sendMessage("NO_MORE_EVENTS");
+        EventLogger.log("FIRE_INCIDENT", "NO_MORE_EVENTS_SENT",
+                "file=" + filename);
+
         EventLogger.log("FIRE_INCIDENT", "READ_EVENTS_FINISHED",
                 "file=" + filename);
     }

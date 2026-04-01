@@ -19,37 +19,53 @@ public class SchedulerUDP {
     private final Map<Integer, List<FireEvent>> eventsPerZone = new HashMap<>();
     private final FireGUI gui;
 
+    private volatile boolean noMoreEvents = false;
+    private volatile boolean shutdownInitiated = false;
+    private volatile boolean running = true;
+
     public SchedulerUDP(int port) throws Exception {
         socket = new DatagramSocket(port);
-        gui = new FireGUI();
+        gui = new FireGUI(this);
         EventLogger.log("SCHEDULER", "STARTED",
                 "port=" + port);
     }
 
     public void start() throws Exception {
-        //System.out.println("[Scheduler] Running on port " + socket.getLocalPort());
         EventLogger.log("SCHEDULER", "RUNNING",
                 "localPort=" + socket.getLocalPort());
 
         byte[] buffer = new byte[1024];
-        while (true) {
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-            socket.receive(packet);
 
-            String msg = new String(packet.getData(),0, packet.getLength());
-            EventLogger.log("SCHEDULER", "MESSAGE_RECEIVED",
-                    "from=" + packet.getAddress() + ":" + packet.getPort() +
-                            " msg=" + msg);
+        while (running) {
             try {
-                // fault handling: invalid/corrupted message isolation
-                handleMessage(msg, packet.getAddress(), packet.getPort());
-                // fault handling: timer-driven detection pass
-                detectTimeoutFaults();
+                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                socket.receive(packet);
+
+                String msg = new String(packet.getData(), 0, packet.getLength());
+                EventLogger.log("SCHEDULER", "MESSAGE_RECEIVED",
+                        "from=" + packet.getAddress() + ":" + packet.getPort() +
+                                " msg=" + msg);
+
+                try {
+                    handleMessage(msg, packet.getAddress(), packet.getPort());
+                    detectTimeoutFaults();
+                } catch (Exception e) {
+                    EventLogger.log("SCHEDULER", "CORRUPTED_OR_INVALID_MESSAGE",
+                            "msg=" + msg + " error=" + e.getMessage());
+                }
+
             } catch (Exception e) {
-                EventLogger.log("SCHEDULER", "CORRUPTED_OR_INVALID_MESSAGE",
-                        "msg=" + msg + " error=" + e.getMessage());
+                if (!running || socket.isClosed()) {
+                    EventLogger.log("SCHEDULER", "SOCKET_CLOSED",
+                            "message=Scheduler socket closed during shutdown");
+                    break;
+                }
+                throw e;
             }
         }
+
+        EventLogger.log("SCHEDULER", "PROCESS_TERMINATED",
+                "message=Scheduler main loop exited cleanly");
     }
 
     private void handleMessage(String msg, InetAddress sender, int port) throws Exception {
@@ -78,12 +94,23 @@ public class SchedulerUDP {
             case "DRONE_COMPLETE":
                 handleDroneComplete(msg);
                 break;
+            case "NO_MORE_EVENTS":
+                handleNoMoreEvents();
+                break;
             default:
                 //System.out.println("[Scheduler] Unknown message: " + msg);
                 EventLogger.log("SCHEDULER", "UNKNOWN_MESSAGE",
                         "msg=" + msg);
                 break;
         }
+    }
+
+    private void handleNoMoreEvents() {
+        noMoreEvents = true;
+        EventLogger.log("SCHEDULER", "NO_MORE_EVENTS_RECEIVED",
+                "pendingEvents=" + pendingEvents.size());
+
+        checkForSystemShutdown();
     }
 
     private void handleZone(String msg) {
@@ -160,6 +187,13 @@ public class SchedulerUDP {
             return;
         }
 
+        if (shutdownInitiated) {
+            send("SHUTDOWN", sender, port);
+            EventLogger.log("SCHEDULER", "SHUTDOWN_SENT_ON_READY",
+                    "drone=" + droneId);
+            return;
+        }
+
         drone.address = sender;
         drone.port = port;
         drone.position = new Point(x, y);
@@ -178,6 +212,15 @@ public class SchedulerUDP {
         }
 
         if (event == null) {
+            checkForSystemShutdown();
+
+            if (shutdownInitiated) {
+                send("SHUTDOWN", sender, port);
+                EventLogger.log("SCHEDULER", "SHUTDOWN_SENT_ON_READY",
+                        "drone=" + droneId);
+                return;
+            }
+
             EventLogger.log("SCHEDULER", "NO_TASK_SENT",
                     "drone=" + droneId);
             send("NO_TASK", sender, port);
@@ -281,6 +324,7 @@ public class SchedulerUDP {
 
         EventLogger.log("SCHEDULER", "DRONE_STATUS_RECEIVED",
                 "drone=" + droneId + " state=" + state + " agent=" + agent);
+        checkForSystemShutdown();
     }
 
     public void handleDronePos(String msg) {
@@ -310,7 +354,7 @@ public class SchedulerUDP {
         //System.out.println("[Scheduler] Drone " + droneId +" is at position "+ x+ " x " + y +" y");
         EventLogger.log("SCHEDULER", "DRONE_POSITION_RECEIVED",
                 "drone=" + droneId + " x=" + x + " y=" + y);
-
+        checkForSystemShutdown();
     }
 
     private void handleDroneArrived(String msg) {
@@ -358,25 +402,34 @@ public class SchedulerUDP {
             drone.workload++;
             drone.state = "IDLE";
             drone.assignedEvent = null;
+            drone.assignedAtMs = 0;
+            drone.lastArrivedAtMs = 0;
+            drone.lastExtinguishProgressAtMs = 0;
+            drone.lastExtinguishAgent = drone.agent;
+            drone.hasArrivedForCurrentMission = false;
+            drone.warningLogged = false;
 
             List<FireEvent> zoneEvents = eventsPerZone.get(zoneId);
             if (zoneEvents != null && completed != null) {
                 zoneEvents.remove(completed);
-                System.out.println(1);
-                if (zoneEvents.isEmpty()) {System.out.println("DONE");
-                    gui.setZoneOnFire(zoneId, false, null); // gray
+
+                if (zoneEvents.isEmpty()) {
+                    eventsPerZone.remove(zoneId);
+                    gui.setZoneOnFire(zoneId, false, null);
                 } else {
-                    // display the first event’s severity
                     gui.setZoneOnFire(zoneId, true, zoneEvents.get(0).severity);
                 }
             }
         }
+
         printEventsPerZone();
         gui.updateDroneStatus(droneId, "IDLE");
 
         EventLogger.log("SCHEDULER", "DRONE_COMPLETE_RECEIVED",
                 "drone=" + droneId + " zone=" + zoneId +
                         " newWorkload=" + (drone != null ? drone.workload : -1));
+
+        checkForSystemShutdown();
     }
 
     private void send(String msg, InetAddress addr, int port) throws Exception {
@@ -557,6 +610,145 @@ public class SchedulerUDP {
                 }
             }
         }).start();
+    }
+
+    private boolean allWorkFinished() {
+        if (!pendingEvents.isEmpty()) {
+            return false;
+        }
+
+        for (Map.Entry<Integer, List<FireEvent>> entry : eventsPerZone.entrySet()) {
+            List<FireEvent> list = entry.getValue();
+            if (list != null && !list.isEmpty()) {
+                return false;
+            }
+        }
+
+        for (DroneInfo d : drones.values()) {
+            if (!d.offline && d.assignedEvent != null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean allActiveDronesAtBaseAndIdle() {
+        for (DroneInfo d : drones.values()) {
+            if (d.offline) {
+                continue;
+            }
+
+            boolean atBase = (d.position != null && d.position.x == 0 && d.position.y == 0);
+            boolean idleLike =
+                    "IDLE".equalsIgnoreCase(d.state) ||
+                            "REFILLED".equalsIgnoreCase(d.state);
+
+            boolean noMission = (d.assignedEvent == null);
+
+            if (!(atBase && idleLike && noMission)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void sendReturnToFieldDrones() {
+        for (DroneInfo d : drones.values()) {
+            if (d.offline) continue;
+            if (d.address == null) continue;
+
+            boolean atBase = (d.position.x == 0 && d.position.y == 0);
+            if (!atBase) {
+                try {
+                    send("RETURN", d.address, d.port);
+                    EventLogger.log("SCHEDULER", "RETURN_SENT",
+                            "drone=" + d.id + " x=" + d.position.x + " y=" + d.position.y);
+                } catch (Exception e) {
+                    EventLogger.log("SCHEDULER", "RETURN_SEND_FAILED",
+                            "drone=" + d.id + " error=" + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void sendShutdownToBaseDrones() {
+        for (DroneInfo d : drones.values()) {
+            if (d.offline) continue;
+            if (d.address == null) continue;
+
+            boolean atBase = (d.position.x == 0 && d.position.y == 0);
+            if (atBase) {
+                try {
+                    send("SHUTDOWN", d.address, d.port);
+                    EventLogger.log("SCHEDULER", "SHUTDOWN_SENT",
+                            "drone=" + d.id);
+                } catch (Exception e) {
+                    EventLogger.log("SCHEDULER", "SHUTDOWN_SEND_FAILED",
+                            "drone=" + d.id + " error=" + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void terminateScheduler() {
+        EventLogger.log("SCHEDULER", "EXIT",
+                "message=All fires extinguished. All drones returned to base. System shutting down.");
+
+        System.out.println("[Scheduler] EXIT: All fires extinguished. All drones returned to base. System shutting down.");
+
+        running = false;
+
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+    }
+
+    private void checkForSystemShutdown() {
+        boolean workFinished = allWorkFinished();
+        boolean allAtBaseIdle = allActiveDronesAtBaseAndIdle();
+
+        EventLogger.log("SCHEDULER", "SHUTDOWN_CHECK",
+                "noMoreEvents=" + noMoreEvents +
+                        " workFinished=" + workFinished +
+                        " allAtBaseIdle=" + allAtBaseIdle +
+                        " pendingEvents=" + pendingEvents.size());
+
+        for (DroneInfo d : drones.values()) {
+            EventLogger.log("SCHEDULER", "SHUTDOWN_CHECK_DRONE",
+                    "drone=" + d.id +
+                            " offline=" + d.offline +
+                            " state=" + d.state +
+                            " x=" + d.position.x +
+                            " y=" + d.position.y +
+                            " assignedEvent=" + (d.assignedEvent != null ? d.assignedEvent.zoneId : "null"));
+        }
+
+        if (!noMoreEvents) return;
+        if (!workFinished) return;
+
+        sendReturnToFieldDrones();
+
+        if (allAtBaseIdle && !shutdownInitiated) {
+            shutdownInitiated = true;
+            sendShutdownToBaseDrones();
+            terminateScheduler();
+        }
+    }
+
+    public void shutdownFromGui() {
+        EventLogger.log("SCHEDULER", "GUI_CLOSE_REQUEST",
+                "message=GUI window closed by user");
+
+        System.out.println("[Scheduler] GUI closed. Shutting down scheduler.");
+
+        running = false;
+
+        if (socket != null && !socket.isClosed()) {
+            socket.close();
+        }
+
+        System.exit(0);
     }
 
     public static class DroneInfo {
