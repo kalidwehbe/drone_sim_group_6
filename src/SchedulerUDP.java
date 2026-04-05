@@ -175,7 +175,6 @@ public class SchedulerUDP {
                         " x=" + x + " y=" + y +
                         " faultType=" + faultType +
                         " pendingCount=" + pendingEvents.size());
-
     }
 
     private void handleReady(String msg, InetAddress sender, int port) throws Exception {
@@ -539,7 +538,6 @@ public class SchedulerUDP {
         if (drone.assignedEvent != null) {
             FireEvent faultedEvent = drone.assignedEvent;
 
-
             List<FireEvent> zoneEvents = eventsPerZone.get(faultedEvent.zoneId);
             if (zoneEvents != null) {
                 zoneEvents.remove(faultedEvent);
@@ -551,7 +549,6 @@ public class SchedulerUDP {
                 }
             }
 
-
             FireEvent requeuedEvent = new FireEvent(
                     faultedEvent.time,
                     faultedEvent.zoneId,
@@ -561,81 +558,27 @@ public class SchedulerUDP {
                     faultedEvent.centerY,
                     FaultType.NONE
             );
+            
             pendingEvents.add(requeuedEvent);
 
+            List<FireEvent> currentZoneEvents = eventsPerZone.get(faultedEvent.zoneId);
+            if (currentZoneEvents != null) {
+                currentZoneEvents.remove(faultedEvent);
+            }
+
+            eventsPerZone.putIfAbsent(faultedEvent.zoneId, new ArrayList<>());
+            eventsPerZone.get(faultedEvent.zoneId).add(requeuedEvent);
+
+            gui.setZoneOnFire(faultedEvent.zoneId, true, faultedEvent.severity);
+
             EventLogger.log("SCHEDULER", "EVENT_REQUEUED_AFTER_FAULT",
-                    "drone=" + drone.id + " zone=" + requeuedEvent.zoneId);
+                    "drone=" + drone.id + " zone=" + requeuedEvent.zoneId +
+                    " severity=" + requeuedEvent.severity);
 
             drone.assignedEvent = null;
 
-
-            attemptReassignmentWithRetry(requeuedEvent);
-
-
             printEventsPerZone();
         }
-    }
-
-    private void attemptReassignmentWithRetry(FireEvent event) {
-        new Thread(() -> {
-            while (true) {
-                boolean assigned = false;
-
-                synchronized (pendingEvents) {
-
-                    // if already assigned by another thread → stop
-                    if (!pendingEvents.contains(event)) {
-                        return;
-                    }
-
-                    for (DroneInfo d : drones.values()) {
-                        if (!d.offline && "IDLE".equalsIgnoreCase(d.state)) {
-                            try {
-                                send("ASSIGN," + event.time + "," + event.zoneId + "," +
-                                                event.type + "," + event.severity + "," +
-                                                event.centerX + "," + event.centerY + "," +
-                                                event.faultType.name(),
-                                        d.address, d.port);
-
-
-                                d.state = "ASSIGNED";
-                                d.assignedEvent = event;
-                                d.assignedAtMs = System.currentTimeMillis();
-
-
-                                pendingEvents.remove(event);
-
-
-                                eventsPerZone.putIfAbsent(event.zoneId, new ArrayList<>());
-                                eventsPerZone.get(event.zoneId).add(event);
-
-                                gui.setZoneOnFire(event.zoneId, true, event.severity);
-                                gui.updateZone(d.id, event.zoneId);
-
-                                EventLogger.log("SCHEDULER", "REASSIGNED_AFTER_FAULT",
-                                        "drone=" + d.id + " zone=" + event.zoneId);
-
-                                printEventsPerZone();
-
-                                assigned = true;
-                                break;
-                            } catch (Exception e) {
-                                EventLogger.log("SCHEDULER", "REASSIGN_FAILED",
-                                        "drone=" + d.id + " error=" + e.getMessage());
-                            }
-                        }
-                    }
-                }
-
-                if (assigned) break;
-
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-        }).start();
     }
 
     private boolean allWorkFinished() {
