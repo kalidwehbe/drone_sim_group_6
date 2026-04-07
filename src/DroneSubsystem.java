@@ -9,18 +9,18 @@ public class DroneSubsystem {
     private final InetAddress schedulerAddress;
     private final int schedulerPort;
 
-    private DatagramSocket socket;
+    DatagramSocket socket;
     private final DroneStateMachine fsm;
 
     private int droneX = 0;
     private int droneY = 0;
     private int agent = 14;
-    private double battery = 100.0;
+    double battery = 100.0;
 
     // battery constants
     private static final double BATTERY_SAFETY_TOLERANCE = 5.0;
     private static final int UNITS_TRAVELLED_TO_DRAIN_1_PERCENT_BATTERY = 100;       // 1% per 100 units travelled
-    private static final int BATTERY_DRAIN_PER_EXTINGUISH_TICK = 1; // 2% per extinguishing tick
+    static final int BATTERY_DRAIN_PER_EXTINGUISH_TICK = 1; // 2% per extinguishing tick
     private static final int BATTERY_DRAIN_PER_HOVER_SECOND = 1;     // 1% per second hover
 
     // fault handling
@@ -305,7 +305,7 @@ public class DroneSubsystem {
         return 10;
     }
 
-    private boolean moveTo(int targetX, int targetY, FireEvent event) throws Exception {
+    boolean moveTo(int targetX, int targetY, FireEvent event) throws Exception {
         int startX = droneX;
         int startY = droneY;
         int steps = 20;
@@ -472,7 +472,7 @@ public class DroneSubsystem {
                 "drone=" + id + " x=" + droneX + " y=" + droneY + " agent=" + agent);
     }
 
-    private double getBatteryNeededToReturn() {
+    double getBatteryNeededToReturn() {
         double distanceToBase = Math.sqrt(Math.pow(droneX, 2) + Math.pow(droneY, 2));
         return (distanceToBase / UNITS_TRAVELLED_TO_DRAIN_1_PERCENT_BATTERY) + BATTERY_SAFETY_TOLERANCE;
     }
