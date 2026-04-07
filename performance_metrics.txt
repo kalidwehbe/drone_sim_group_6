@@ -1,0 +1,63 @@
+PERFORMANCE METRICS
+===================
+
+Fire Metrics
+------------
+Zone 1 (eventTime=14:03:15, severity=Low)
+  Queue wait time: 00:00.012
+  Response time: 00:02.588
+  Time to extinguish: 00:04.614
+  Completed by drone: 3
+
+Zone 2 (eventTime=14:03:25, severity=Moderate)
+  Queue wait time: 00:00.049
+  Response time: 00:05.617
+  Time to extinguish: 00:14.272
+  Completed by drone: 1
+
+Zone 3 (eventTime=14:03:40, severity=High)
+  Queue wait time: 00:00.192
+  Response time: 00:02.742
+  Time to extinguish: 00:22.186
+  Completed by drone: 3
+
+Zone 7 (eventTime=14:04:00, severity=Low)
+  Queue wait time: 00:12.869
+  Response time: 00:24.858
+  Time to extinguish: 00:26.911
+  Completed by drone: 3
+
+Summary Metrics
+---------------
+Number of fires handled: 4
+Average extinguish time: 00:16.995
+Average queue wait time: 00:03.280
+Average response time: 00:08.951
+Total time to extinguish all fires: 00:31.420
+
+Per-Drone Metrics
+-----------------
+Drone 1
+  Missions per drone: 2
+  Fires handled: 1
+  Drone flight time: 00:09.228
+  Drone idle time: 00:09.159
+  Distance traveled: 4342.27 m
+  Drone utilization: 64.00%
+
+Drone 2
+  Missions per drone: 1
+  Fires handled: 0
+  Drone flight time: 00:02.539
+  Drone idle time: 00:08.611
+  Distance traveled: 1037.90 m
+  Drone utilization: 22.90%
+
+Drone 3
+  Missions per drone: 3
+  Fires handled: 3
+  Drone flight time: 00:23.224
+  Drone idle time: 00:03.644
+  Distance traveled: 10317.27 m
+  Drone utilization: 90.17%
+
